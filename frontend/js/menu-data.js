@@ -135,3 +135,64 @@ const MENU_ITEMS = [
 function pizzaItems() {
   return MENU_ITEMS.filter((i) => i.category === "pizza");
 }
+
+// Real product photos, downloaded from 8 Portions' own ordering platform CDN
+// (the same images shown on their live menu). Two sauces (Spicy Honey, Pesto)
+// have no photo on the source site, so they're left without an `image` field
+// and fall back to the category icon.
+const MENU_ITEM_IMAGES = {
+  "naimi-lamb-meat": "img/menu/naimi-lamb-meat.webp",
+  "isfahani": "img/menu/isfahani.webp",
+  "chicken-shish-tawook": "img/menu/chicken-shish-tawook.webp",
+  "roma": "img/menu/roma.webp",
+  "vegetables": "img/menu/vegetables.webp",
+  "pepperoni": "img/menu/pepperoni.webp",
+  "eggplant-pine-nuts": "img/menu/eggplant-pine-nuts.webp",
+  "goat-cheese": "img/menu/goat-cheese.webp",
+  "margarita": "img/menu/margarita.webp",
+  "mushroom-pizza": "img/menu/mushroom-pizza.webp",
+  "truffle": "img/menu/truffle.webp",
+  "south-african": "img/menu/south-african.webp",
+  "alfredo-chicken": "img/menu/alfredo-chicken.webp",
+  "butter-chicken": "img/menu/butter-chicken.webp",
+  "mexican-chicken": "img/menu/mexican-chicken.webp",
+  "oats-soup": "img/menu/oats-soup.webp",
+  "burrata-cheese-salad": "img/menu/burrata-cheese-salad.webp",
+  "quinoa-salad": "img/menu/quinoa-salad.webp",
+  "arancini": "img/menu/arancini.webp",
+  "dolma-risotto": "img/menu/dolma-risotto.webp",
+  "chicken-fillets": "img/menu/chicken-fillets.webp",
+  "chili-lime-chicken-wings": "img/menu/chili-lime-chicken-wings.webp",
+  "chipotle-chicken-wings": "img/menu/chipotle-chicken-wings.webp",
+  "bbq-chicken-wings": "img/menu/bbq-chicken-wings.webp",
+  "french-fries": "img/menu/french-fries.webp",
+  "baked-bechamel-pasta": "img/menu/baked-bechamel-pasta.webp",
+  "pink-pasta": "img/menu/pink-pasta.webp",
+  "truffle-pasta": "img/menu/truffle-pasta.webp",
+  "specialty-lasagna": "img/menu/specialty-lasagna.webp",
+  "lemon-risotto-shrimp": "img/menu/lemon-risotto-shrimp.webp",
+  "tiramisu": "img/menu/tiramisu.webp",
+  "rosemary-pineapple-mix": "img/menu/rosemary-pineapple-mix.webp",
+  "peach-habaq": "img/menu/peach-habaq.webp",
+  "passion-ginger-ale": "img/menu/passion-ginger-ale.webp",
+  "fresh-orange-juice": "img/menu/fresh-orange-juice.webp",
+  "water-pellegrino": "img/menu/water-pellegrino.webp",
+  "water": "img/menu/water.webp",
+  "soft-drinks": "img/menu/soft-drinks.webp",
+  "basil-lemonade": "img/menu/basil-lemonade.webp",
+  "tabasco-chili-oil": "img/menu/tabasco-chili-oil.webp",
+  "8portions-chili-sauce": "img/menu/8portions-chili-sauce.webp",
+  "honey-mustard": "img/menu/honey-mustard.webp",
+  "blue-cheese-sauce": "img/menu/blue-cheese-sauce.webp",
+  "spicy-sauce": "img/menu/spicy-sauce.webp",
+  "chili-flakes": "img/menu/chili-flakes.webp",
+  "marinara-sauce": "img/menu/marinara-sauce.webp",
+  "bbq-sauce": "img/menu/bbq-sauce.webp",
+  "chili-lime-sauce": "img/menu/chili-lime-sauce.webp",
+  "ranch-sauce": "img/menu/ranch-sauce.webp",
+  "chipotle-sauce": "img/menu/chipotle-sauce.webp",
+};
+
+MENU_ITEMS.forEach((item) => {
+  if (MENU_ITEM_IMAGES[item.id]) item.image = MENU_ITEM_IMAGES[item.id];
+});

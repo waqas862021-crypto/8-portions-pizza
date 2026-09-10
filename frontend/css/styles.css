@@ -540,7 +540,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: float 6s ease-in-out infinite;
+  animation: float 3.5s ease-in-out infinite;
 }
 
 .hero-plate svg {
@@ -550,7 +550,7 @@ select {
 
 .hero-badge {
   position: absolute;
-  bottom: 6%;
+  bottom: -4%;
   left: -6%;
   background: var(--color-charcoal);
   color: #fff;
@@ -565,6 +565,16 @@ select {
 .hero-badge-icon {
   color: var(--color-accent);
   flex-shrink: 0;
+}
+
+.hero-badge-rating .hero-badge-icon {
+  color: var(--color-accent-warm);
+}
+
+.hero-badge-stars {
+  color: var(--color-accent-warm);
+  letter-spacing: 1px;
+  font-size: 0.85em;
 }
 
 .hero-badge strong {
@@ -637,6 +647,12 @@ select {
   width: 46%;
   height: 46%;
   opacity: 0.85;
+}
+
+.food-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .badge-row {
@@ -819,6 +835,12 @@ select {
   opacity: 0.9;
 }
 
+.story-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* -------------------------------------------------------------------------
    Instagram
    ------------------------------------------------------------------------- */
@@ -855,6 +877,13 @@ select {
 .ig-tile svg {
   width: 30%;
   height: 30%;
+}
+
+.ig-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .ig-cta {
@@ -1172,6 +1201,12 @@ select {
 
 .modal-media svg {
   width: 36%;
+}
+
+.modal-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .modal-close {

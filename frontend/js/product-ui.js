@@ -12,11 +12,15 @@ function foodCardHtml(item) {
   const priceLabel = item.sizes ? `<span class="price price-from">${formatPrice(item.basePrice)}</span>` : `<span class="price">${formatPrice(item.basePrice)}</span>`;
   const kcalLabel = item.kcal ? `<span class="kcal-tag">${item.kcal} kcal</span>` : "";
 
+  const media = item.image
+    ? `<img src="${item.image}" alt="${escapeHtml(item.name)}" loading="lazy" />`
+    : icon(item.icon);
+
   return `
     <article class="food-card" data-reveal>
       <div class="food-card-media">
         <div class="badge-row">${badges.join("")}</div>
-        ${icon(item.icon)}
+        ${media}
       </div>
       <div class="food-card-body">
         <h3>${escapeHtml(item.name)}</h3>
@@ -143,7 +147,7 @@ function renderModal() {
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-media">
         <button class="icon-btn modal-close" id="modal-close" aria-label="Close">${icon("close")}</button>
-        ${icon(item.icon)}
+        ${item.image ? `<img src="${item.image}" alt="${escapeHtml(item.name)}" />` : icon(item.icon)}
       </div>
       <div class="modal-body">
         <div>

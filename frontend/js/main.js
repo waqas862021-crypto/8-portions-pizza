@@ -63,11 +63,15 @@ function renderDeliveryPartners() {
 function renderInstagramGrid() {
   const grid = document.getElementById("ig-grid");
   if (!grid) return;
-  const tiles = [1, 2, 3]
-    .map(() => `<div class="ig-tile" data-reveal>${icon("instagram")}</div>`)
+  const photoTiles = [
+    { src: "img/brand/plaque.jpg", alt: "8 Portions logo plaque" },
+    { src: "img/brand/dish-napkin.jpg", alt: "A dish at 8 Portions" },
+  ]
+    .map((p) => `<div class="ig-tile" data-reveal><img src="${p.src}" alt="${p.alt}" loading="lazy" /></div>`)
     .join("");
   grid.innerHTML = `
-    ${tiles}
+    <div class="ig-tile" data-reveal>${icon("instagram")}</div>
+    ${photoTiles}
     <a class="ig-tile ig-cta" href="${SITE.instagramUrl}" target="_blank" rel="noopener" data-reveal>
       ${icon("instagram")}
       Follow Us
