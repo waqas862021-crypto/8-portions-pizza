@@ -391,13 +391,13 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "add_item_to_order"
-        description = "Add one valid menu item to the customer's current order. Only call this with a real menuItemId from the menu data. If the item's optionsRequired is true, first ask the customer to pick one of its options and pass its id in selectedOptionIds - calling this without a required option will fail."
+        description = "Add one menu item to the order. Use a real menuItemId. If optionsRequired is true, ask which option first and pass it in selectedOptionIds - required options can't be skipped."
         parameters = @{
           type = "object"
           properties = @{
-            menuItemId = @{ type = "string"; description = "Exact id of the item from the menu data (data/menu.json)." }
+            menuItemId = @{ type = "string"; description = "Exact id from the menu data." }
             quantity = @{ type = "integer"; minimum = 1 }
-            selectedOptionIds = @{ type = "array"; items = @{ type = "string" }; description = "ids of any chosen options for this item (e.g. a size or milk choice)." }
+            selectedOptionIds = @{ type = "array"; items = @{ type = "string" }; description = "Chosen option ids (e.g. size)." }
           }
           required = @("menuItemId", "quantity")
         }
@@ -407,13 +407,13 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "modify_order_item"
-        description = "Change the quantity and/or chosen options (size, milk type, add-ons, etc.) of an item already in the order. Only call this with a real lineItemId from the current order state. Provide quantity and/or selectedOptionIds - whichever the customer wants changed; selectedOptionIds, if given, completely replaces the item's previous option choices, so include every option that should still apply, not just the new one."
+        description = "Change quantity and/or options of an existing order line (by lineItemId). selectedOptionIds, if given, fully replaces prior options - include all that should still apply, not just the new one."
         parameters = @{
           type = "object"
           properties = @{
-            lineItemId = @{ type = "string"; description = "id of the existing order line to change (from the current order state)." }
+            lineItemId = @{ type = "string"; description = "Existing order line id." }
             quantity = @{ type = "integer"; minimum = 1; description = "New quantity, if changing it." }
-            selectedOptionIds = @{ type = "array"; items = @{ type = "string" }; description = "Full replacement set of option ids for this line, if changing size/customizations." }
+            selectedOptionIds = @{ type = "array"; items = @{ type = "string" }; description = "Full replacement option ids, if changing them." }
           }
           required = @("lineItemId")
         }
@@ -423,12 +423,12 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "remove_order_item"
-        description = "Remove an item from the order, in full or partially. Only call this with a real lineItemId from the current order state. Omit quantity (or give a quantity that is greater than or equal to what's currently ordered) to remove the whole line; give a smaller quantity to reduce it by that amount instead."
+        description = "Remove or reduce an order line (by lineItemId). Omit quantity (or give one >= what's ordered) to remove it all; give a smaller quantity to reduce it."
         parameters = @{
           type = "object"
           properties = @{
-            lineItemId = @{ type = "string"; description = "id of the existing order line to remove or reduce (from the current order state)." }
-            quantity = @{ type = "integer"; minimum = 1; description = "How many units to remove. Omit to remove the entire line." }
+            lineItemId = @{ type = "string"; description = "Existing order line id." }
+            quantity = @{ type = "integer"; minimum = 1; description = "Units to remove. Omit for the whole line." }
           }
           required = @("lineItemId")
         }
@@ -438,11 +438,11 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "apply_promotion"
-        description = "Apply one promotion to the current order, by its id. Only call this with a promotionId that appears in the 'Currently eligible active promotions' list in the system context - that list is already filtered to what's active and eligible for this exact order, so never call this with an id you weren't given there. Only one promotion can be applied per order."
+        description = "Apply one promotion by id - only an id from the 'Currently eligible active promotions' list, never one you weren't given there. One promotion per order."
         parameters = @{
           type = "object"
           properties = @{
-            promotionId = @{ type = "string"; description = "id of the promotion to apply, from the eligible promotions list." }
+            promotionId = @{ type = "string"; description = "id from the eligible promotions list." }
           }
           required = @("promotionId")
         }
@@ -452,12 +452,12 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "set_pickup_order"
-        description = "Select pickup as the order type and record the customer's name (required) and, optionally, when they want to pick it up. Check the current order state first and only ask the customer for whatever is still missing (customer.name / pickupTime) - you can call this once with just the name and again later to add a pickup time, or provide both at once."
+        description = "Set pickup as order type; needs customer name (required), pickup time optional. Only ask for what's missing (check order state first); callable incrementally."
         parameters = @{
           type = "object"
           properties = @{
-            customerName = @{ type = "string"; description = "Customer's name for the pickup order. Required unless it's already set in the current order state." }
-            pickupTime = @{ type = "string"; description = "When the customer wants to pick up, in their own words (e.g. '6:30 PM', 'ASAP', 'in 20 minutes'). Optional." }
+            customerName = @{ type = "string"; description = "Required unless already set in order state." }
+            pickupTime = @{ type = "string"; description = "In the customer's own words. Optional." }
           }
           required = @()
         }
@@ -467,15 +467,15 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "set_delivery_order"
-        description = "Select delivery as the order type and record the customer's name, phone number and full delivery address (all required), plus an apartment/unit number and delivery instructions if given (both optional). Check the current order state first and only ask for whatever is still missing - call this incrementally as information comes in; it reports back exactly which required fields are still missing until all three are provided. Never guess or fill in any of these fields - only use what the customer actually told you."
+        description = "Set delivery as order type; needs name, phone, address (required), apartment/instructions optional. Only ask for what's missing (check order state first) - never guess a value. Callable incrementally; reports which required fields remain missing."
         parameters = @{
           type = "object"
           properties = @{
-            customerName = @{ type = "string"; description = "Customer's name. Required." }
-            phone = @{ type = "string"; description = "Customer's phone number. Required." }
-            address = @{ type = "string"; description = "Full delivery address. Required." }
-            apartmentUnit = @{ type = "string"; description = "Apartment or unit number, if applicable. Optional." }
-            instructions = @{ type = "string"; description = "Delivery instructions, e.g. gate code, landmark, leave at door. Optional." }
+            customerName = @{ type = "string"; description = "Required." }
+            phone = @{ type = "string"; description = "Required." }
+            address = @{ type = "string"; description = "Full address. Required." }
+            apartmentUnit = @{ type = "string"; description = "Optional." }
+            instructions = @{ type = "string"; description = "E.g. gate code, landmark. Optional." }
           }
           required = @()
         }
@@ -485,7 +485,7 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "confirm_delivery_address"
-        description = "Mark the current delivery address as explicitly confirmed by the customer. Only call this AFTER you have read the full address back to them (street, apartment/unit if any) and they have explicitly said it's correct - never call it just because you set the address, and never call it if they asked for a correction (call set_delivery_order with the corrected address instead, then read it back and confirm again)."
+        description = "Mark the delivery address confirmed - only after reading it back verbatim and getting an explicit yes. Never call just because the address was set, or on a correction request (use set_delivery_order for that, then confirm again)."
         parameters = @{
           type = "object"
           properties = @{}
@@ -497,7 +497,7 @@ function Get-ToolDefinitions {
       type = "function"
       function = @{
         name = "confirm_order"
-        description = "Mark the order as confirmed by the customer - the gate that must happen before anything is ever treated as saved or final. Only call this AFTER presenting the complete checkout summary and receiving an explicit, unambiguous confirmation (e.g. 'yes, that's correct', 'confirm it', 'place the order'). A vague, hedging, or non-committal reply ('ok', 'sure', 'I guess', a question, or a reply that also asks for a change) does NOT count as confirmation - never call this on one of those; ask a direct yes/no question instead. Never call this preemptively or assume agreement."
+        description = "Confirm the order - the save/finalize gate. Only call after presenting the complete checkout summary AND an explicit, unambiguous yes (e.g. 'yes, place it'). A vague/hedging reply ('ok', 'sure', a question, or one that also asks for a change) does NOT count - ask a direct yes/no instead."
         parameters = @{
           type = "object"
           properties = @{}
@@ -974,11 +974,26 @@ function Invoke-AiChatCompletion([array]$messages, [array]$tools) {
 
   $payload = @{ model = $model; messages = $messages }
   if ($tools) { $payload.tools = $tools }
-  $body = $payload | ConvertTo-Json -Depth 10
+  $bodyText = $payload | ConvertTo-Json -Depth 10
+  # Invoke-RestMethod -Body <string> encodes the body using the system's
+  # default codepage, not UTF-8 - the menu/system prompt contain
+  # non-ASCII characters (em dashes, ellipses), so that silently corrupts
+  # the JSON in transit and the API rejects it. Encoding to UTF-8 bytes
+  # ourselves and sending those instead avoids that.
+  $body = [System.Text.Encoding]::UTF8.GetBytes($bodyText)
   $headers = @{ Authorization = "Bearer $apiKey" }
   $endpoint = $baseUrl.TrimEnd('/') + "/chat/completions"
 
-  $response = Invoke-RestMethod -Uri $endpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body
+  # Invoke-RestMethod's automatic response parsing doesn't reliably
+  # honor UTF-8 for the response body either (same class of issue as the
+  # request-encoding one above) - it mangles curly quotes/dashes/etc.
+  # into mojibake. Reading the raw response bytes and decoding them as
+  # UTF-8 ourselves before parsing JSON avoids that. -UseBasicParsing
+  # skips Invoke-WebRequest's IE-engine dependency, which isn't
+  # available in this non-interactive environment.
+  $webResponse = Invoke-WebRequest -UseBasicParsing -Uri $endpoint -Method Post -Headers $headers -ContentType "application/json; charset=utf-8" -Body $body
+  $responseText = [System.Text.Encoding]::UTF8.GetString($webResponse.RawContentStream.ToArray())
+  $response = $responseText | ConvertFrom-Json
   return $response.choices[0].message
 }
 

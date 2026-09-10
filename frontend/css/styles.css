@@ -1577,6 +1577,17 @@ select {
   }
 }
 
+/* Printing (incl. "Save as PDF") renders the whole page without ever
+   firing the scroll events the IntersectionObserver in main.js needs,
+   so [data-reveal] elements would otherwise stay invisible. */
+@media print {
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
 /* -------------------------------------------------------------------------
    Responsive
    ------------------------------------------------------------------------- */
