@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CafeBot Chat — 8 Portions Pizza</title>
+<meta name="description" content="CafeBot chat interface prototype. UI only — mock messages, no live AI, backend, or authentication yet." />
+<meta name="robots" content="noindex" />
+<link rel="icon" type="image/jpeg" href="img/logo-mark.jpeg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="chatbot-page">
+  <main id="main" class="chatbot-shell">
+    <header class="chat-header">
+      <a class="chat-back" href="index.html" aria-label="Back to site">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 19 8 12l7-7"/></svg>
+      </a>
+      <div class="chat-header-info">
+        <span class="chat-header-name">CafeBot</span>
+        <span class="chat-header-status">UI prototype &middot; mock messages only</span>
+      </div>
+    </header>
+
+    <div class="chat-log" id="chat-log" aria-live="polite"></div>
+
+    <form class="chat-input-row" id="chat-form">
+      <input type="text" id="chat-input" placeholder="Type a message…" autocomplete="off" aria-label="Message" />
+      <button type="submit" class="chat-send-btn" aria-label="Send message">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+      </button>
+    </form>
+  </main>
+
+  <script src="js/chatbot.js"></script>
+</body>
+</html>

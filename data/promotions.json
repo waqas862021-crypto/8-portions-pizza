@@ -1,0 +1,45 @@
+{
+  "_note": "Sample/placeholder promotions for backend & prompt scaffolding (Phase B). Not real 8 Portions offers - the client hasn't supplied real promotion rules. Categories match the real menu (data/menu.json). CafeBot must only apply or recommend promotions where \"active\" is true and whose eligibility rules are actually satisfied.",
+  "currency": "SAR",
+  "promotions": [
+    {
+      "id": "promo-001",
+      "name": "Happy Hour Pizza",
+      "rule": "20% off all pizza category items when ordered between 3pm and 5pm.",
+      "discount": { "type": "percentage", "value": 20 },
+      "eligibility": {
+        "categories": ["pizza"],
+        "timeWindow": { "start": "15:00", "end": "17:00" },
+        "minOrderValue": 0,
+        "channels": ["dine-in", "pickup", "delivery"]
+      },
+      "active": true
+    },
+    {
+      "id": "promo-002",
+      "name": "Pizza + Drink Combo",
+      "rule": "Buy any pizza and get a drink for SAR 5 off its price.",
+      "discount": { "type": "fixed", "value": 5.0 },
+      "eligibility": {
+        "requiresCategories": ["pizza"],
+        "appliesToCategory": "drinks",
+        "minOrderValue": 0,
+        "channels": ["dine-in", "pickup", "delivery"]
+      },
+      "active": true
+    },
+    {
+      "id": "promo-003",
+      "name": "Weekend Discount",
+      "rule": "10% off total order value on weekend orders over SAR 50.",
+      "discount": { "type": "percentage", "value": 10 },
+      "eligibility": {
+        "days": ["friday", "saturday"],
+        "timeWindow": { "start": "09:00", "end": "12:00" },
+        "minOrderValue": 50,
+        "channels": ["dine-in", "pickup"]
+      },
+      "active": false
+    }
+  ]
+}

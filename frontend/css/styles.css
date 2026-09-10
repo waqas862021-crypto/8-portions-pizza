@@ -1664,3 +1664,209 @@ select {
     width: 100%;
   }
 }
+
+/* -------------------------------------------------------------------------
+   CafeBot chat interface (UI prototype — mock messages only, no live AI/
+   backend/auth wired up yet)
+   ------------------------------------------------------------------------- */
+.chatbot-page {
+  background: var(--color-charcoal);
+}
+
+.chatbot-shell {
+  display: flex;
+  flex-direction: column;
+  max-width: 480px;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0 auto;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-lg);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.chat-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  color: var(--color-text);
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.chat-back:hover {
+  background: var(--color-card);
+}
+
+.chat-back svg {
+  width: 20px;
+  height: 20px;
+}
+
+.chat-header-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.chat-header-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.chat-header-status {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat-bubble-row {
+  display: flex;
+}
+
+.chat-bubble-row.from-bot {
+  justify-content: flex-start;
+}
+
+.chat-bubble-row.from-customer {
+  justify-content: flex-end;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  box-shadow: var(--shadow-sm);
+  overflow-wrap: anywhere;
+}
+
+.from-bot .chat-bubble {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+.from-customer .chat-bubble {
+  background: var(--color-primary);
+  color: #fff;
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.chat-bubble-time {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.68rem;
+  opacity: 0.65;
+}
+
+.chat-typing {
+  display: inline-flex;
+  gap: 4px;
+  padding: 0.2rem 0;
+  box-shadow: none;
+}
+
+.chat-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  animation: chat-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.chat-typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.chat-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+#chat-input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 1rem;
+}
+
+#chat-input:disabled {
+  opacity: 0.7;
+}
+
+.chat-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--color-primary);
+  color: #fff;
+  flex-shrink: 0;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.chat-send-btn:hover {
+  background: var(--color-primary-dark);
+  transform: translateY(-1px);
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.chat-send-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 540px) {
+  .chatbot-shell {
+    max-width: 100%;
+    box-shadow: none;
+  }
+}
