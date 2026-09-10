@@ -19,6 +19,7 @@ const ICONS = {
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>',
   heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 20s-7-4.4-9.5-8.8C.6 7.6 2.6 4 6.3 4A5 5 0 0 1 12 7.5 5 5 0 0 1 17.7 4c3.7 0 5.7 3.6 3.8 7.2C19 15.6 12 20 12 20Z"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h16v11H8l-4 4V5Z"/></svg>',
 };
 
 function icon(name) {
@@ -45,6 +46,9 @@ function renderHeader(activePage) {
         </nav>
         <div class="header-actions">
           <a class="btn btn-ghost btn-sm" href="menu.html">Order Now</a>
+          <a class="icon-btn" href="chatbot.html" aria-label="Chat with CafeBot">
+            ${icon("chat")}
+          </a>
           <button class="icon-btn" id="cart-toggle" aria-haspopup="dialog" aria-label="Open cart">
             ${icon("cart")}
             <span class="cart-count" id="cart-count" hidden>0</span>
@@ -82,6 +86,7 @@ function renderFooter() {
             <ul>
               <li><a href="index.html">Home</a></li>
               <li><a href="menu.html">Full Menu</a></li>
+              <li><a href="chatbot.html">Chat with CafeBot</a></li>
               <li><a href="index.html#about">Our Story</a></li>
               <li><a href="index.html#branches">Branches</a></li>
             </ul>

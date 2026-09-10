@@ -1,9 +1,16 @@
 # CafeBot chat backend - zero-install, matches the same approach as
 # serve.ps1 (uses .NET's built-in HttpListener; no Node/Python needed on
-# this machine). One endpoint: POST /api/chat.
+# this machine). Endpoints: POST /api/chat, GET /dashboard, GET /api/orders,
+# POST /api/orders/status (see "Staff dashboard" further down).
 #
 # Request body:  { "message": "...", "history": [{ "role": "user"|"assistant", "content": "..." }, ...], "sessionId": "..." (optional) }
 # Response body: { "reply": "...", "sessionId": "...", "order": { ... } }
+#
+# frontend/chatbot.html calls POST /api/chat directly from the browser and
+# is served by serve.ps1 on a different port, so every response carries
+# permissive CORS headers (Access-Control-Allow-Origin: *) and OPTIONS
+# preflight requests are answered directly - same no-auth, local/trusted-
+# use posture as the rest of this backend, not meant for a public origin.
 #
 # CafeBot is grounded in data/menu.json (the only source of truth for
 # menu items/prices) and prompts/system-prompt.md (its instructions).
@@ -987,8 +994,22 @@ while ($listener.IsListening) {
   $res = $context.Response
   $res.ContentType = "application/json"
 
+  # frontend/chatbot.html is served by serve.ps1 on a different port (a
+  # different origin), so its fetch() calls here are cross-origin - CORS
+  # headers are required or the browser blocks the response before this
+  # page ever sees it. "*" (not a specific origin) matches this backend's
+  # existing no-auth, local/trusted-use posture (see backend/README.md).
+  $res.Headers.Add("Access-Control-Allow-Origin", "*")
+  $res.Headers.Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+  $res.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+
   try {
-    if ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/dashboard") {
+    if ($req.HttpMethod -eq "OPTIONS") {
+      # CORS preflight - the browser sends this before the real POST
+      # /api/chat request because it carries a JSON body. No content
+      # needed, just the headers above plus a success status.
+      $res.StatusCode = 204
+    } elseif ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/dashboard") {
       $res.ContentType = "text/html"
       $html = Get-Content $dashboardPath -Raw
       $bytes = [System.Text.Encoding]::UTF8.GetBytes($html)

@@ -135,8 +135,17 @@ What it does:
   payment or fulfillment handoff beyond that yet — see
   `prompts/system-prompt.md`.
 
-The frontend chat UI (`frontend/chatbot.html`) is not wired up to this
-endpoint yet — it still only shows mock messages.
+The frontend chat UI (`frontend/chatbot.html` / `frontend/js/chatbot.js`)
+calls this endpoint directly from the browser. It's served by `serve.ps1`
+on a different port than this backend, so every response here carries
+`Access-Control-Allow-Origin: *` and `OPTIONS` preflight requests are
+answered directly - same permissive, no-auth posture as the rest of this
+backend. `chatbot.js` persists `sessionId` and the message history in
+`localStorage` so a page reload keeps the conversation and the backend's
+in-memory order state in sync; if `backend/server.ps1` isn't running or
+`.env` isn't configured, it shows a friendly error instead of a reply.
+`chatbot.html` is linked from every page's header (chat icon) and footer
+via `frontend/js/shared-ui.js`.
 
 ## Staff dashboard
 

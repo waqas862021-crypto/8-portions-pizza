@@ -4,6 +4,12 @@ The full 8 Portions site: `index.html` (home) and `menu.html` (full
 menu), plus `privacy.html`/`terms.html` stubs. Static HTML/CSS/vanilla
 JS — no build step.
 
+- `chatbot.html` / `js/chatbot.js` — CafeBot chat UI, calls
+  `backend/server.ps1`'s `POST /api/chat` directly from the browser (see
+  `backend/README.md`). Linked from the header (chat icon, next to cart)
+  and footer on every page via `shared-ui.js`. Needs `backend/server.ps1`
+  running with a configured `.env` to get real replies.
+
 - `css/styles.css` — the whole design system (colors, type, spacing,
   every component) as one hand-written stylesheet.
 - `js/config.js`, `js/menu-data.js`, `js/branch-data.js` — the data.

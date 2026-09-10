@@ -1,21 +1,14 @@
-// CafeBot chat interface — UI prototype only. Conversation starts with a
-// scripted mock exchange, and sending a message triggers a canned reply
-// after a short "typing" delay. No AI API, backend, or auth is wired up.
+// CafeBot chat interface — wired up to backend/server.ps1's POST /api/chat.
+// Order state itself lives on the backend, keyed by sessionId; this page
+// only persists sessionId + the message history in localStorage so a page
+// reload doesn't lose the conversation. Requires backend/server.ps1 to be
+// running (see backend/README.md) with a configured .env - if it isn't,
+// sending a message shows a friendly error instead of a reply.
 
-const MOCK_CONVERSATION = [
-  { from: "bot", text: "Hi! I'm CafeBot 👋 I can help you browse the menu, check today's promotions, or start an order. What can I get you?" },
-  { from: "customer", text: "Hi, what pizzas do you have?" },
-  { from: "bot", text: "We've got a few favorites — Naimi Lamb, Isfahani, and the classics. Want me to walk you through the full menu?" },
-];
-
-const MOCK_REPLIES = [
-  "Got it, noting that down. (This is a UI prototype, so I can't place real orders yet.)",
-  "Thanks for the message! A real CafeBot response will go here once it's connected.",
-  "Sounds good. Anything else you'd like to add?",
-  "I hear you — for now this chat is just a visual mockup, no live answers yet.",
-];
-
-let mockReplyIndex = 0;
+const CAFEBOT_API_URL = "http://localhost:8792/api/chat";
+const SESSION_STORAGE_KEY = "cafebot_session_id";
+const HISTORY_STORAGE_KEY = "cafebot_history";
+const GREETING = "Hi! I'm CafeBot 👋 I can help you browse the menu, check today's promotions, or start an order. What can I get you?";
 
 function escapeHtml(value) {
   const div = document.createElement("div");
@@ -59,18 +52,54 @@ function hideTypingIndicator() {
   document.getElementById("chat-typing-row")?.remove();
 }
 
-function loadMockConversation() {
-  MOCK_CONVERSATION.forEach((message) => appendBubble(message.from, message.text));
+function getSessionId() {
+  return localStorage.getItem(SESSION_STORAGE_KEY) || "";
 }
 
-function sendMockReply(onDone) {
-  showTypingIndicator();
-  setTimeout(() => {
-    hideTypingIndicator();
-    appendBubble("bot", MOCK_REPLIES[mockReplyIndex % MOCK_REPLIES.length]);
-    mockReplyIndex += 1;
-    onDone();
-  }, 900);
+function setSessionId(id) {
+  if (id) localStorage.setItem(SESSION_STORAGE_KEY, id);
+}
+
+function getHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(history) {
+  // Cap so localStorage doesn't grow unbounded over a long conversation.
+  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history.slice(-40)));
+}
+
+function loadConversation() {
+  const history = getHistory();
+  if (history.length === 0) {
+    appendBubble("bot", GREETING);
+    return;
+  }
+  history.forEach((turn) => appendBubble(turn.role === "user" ? "customer" : "bot", turn.content));
+}
+
+async function sendToCafeBot(message) {
+  const history = getHistory();
+  const response = await fetch(CAFEBOT_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history, sessionId: getSessionId() }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `CafeBot request failed (${response.status}).`);
+  }
+
+  const data = await response.json();
+  setSessionId(data.sessionId);
+  saveHistory(history.concat({ role: "user", content: message }, { role: "assistant", content: data.reply }));
+  return data.reply;
 }
 
 function initChatForm() {
@@ -78,7 +107,7 @@ function initChatForm() {
   const input = document.getElementById("chat-input");
   const sendBtn = form.querySelector(".chat-send-btn");
 
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
@@ -90,16 +119,25 @@ function initChatForm() {
     // overlapping "typing" bubbles with a duplicate element id).
     input.disabled = true;
     sendBtn.disabled = true;
-    sendMockReply(() => {
+    showTypingIndicator();
+
+    try {
+      const reply = await sendToCafeBot(text);
+      hideTypingIndicator();
+      appendBubble("bot", reply);
+    } catch (err) {
+      hideTypingIndicator();
+      appendBubble("bot", "Sorry, I couldn't reach CafeBot right now - please try again in a moment.");
+    } finally {
       input.disabled = false;
       sendBtn.disabled = false;
       input.focus();
-    });
+    }
   });
 }
 
 function initChatbotPage() {
-  loadMockConversation();
+  loadConversation();
   initChatForm();
 }
 
