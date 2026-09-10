@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editor/OS
+.vscode/
+.DS_Store
+
+# Generated scratch output (e.g. downloadable scaffold zips), not source
+Claude outputs/

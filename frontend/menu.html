@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Menu — 8 Portions Speciality Pizza</title>
+<meta name="description" content="The full 8 Portions menu: speciality pizzas, soups, salads, pasta, sides, sweets, drinks and sauces, with real prices in SAR." />
+<link rel="canonical" href="menu.html" />
+
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Menu — 8 Portions Speciality Pizza" />
+<meta property="og:description" content="Speciality pizzas, pasta, salads, sides, sweets, drinks and sauces — the full 8 Portions menu with real prices." />
+<meta property="og:image" content="img/logo-wordmark.png" />
+
+<link rel="icon" type="image/jpeg" href="img/logo-mark.jpeg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <main id="main">
+    <section class="page-hero">
+      <div class="container">
+        <span class="eyebrow">The Full Menu</span>
+        <h1>Speciality Pizza &amp; More</h1>
+        <p>Every item below is from the real 8 Portions menu (Dhahran branch), with real prices in SAR.</p>
+      </div>
+    </section>
+
+    <div class="menu-toolbar">
+      <div class="container">
+        <div class="search-field">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" id="menu-search" placeholder="Search the menu…" aria-label="Search menu" />
+        </div>
+        <div class="category-tabs" id="category-tabs"></div>
+      </div>
+    </div>
+
+    <section class="section">
+      <div class="container">
+        <p class="menu-results-count" id="menu-results-count"></p>
+        <div class="grid grid-3" id="menu-grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="product-modal"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/menu-data.js"></script>
+  <script src="js/branch-data.js"></script>
+  <script src="js/shared-ui.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/product-ui.js"></script>
+  <script src="js/menu-page.js"></script>
+</body>
+</html>
