@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>8 Portions - Staff Order Dashboard</title>
+<style>
+  /* Minimal, self-contained internal tool - deliberately not sharing
+     frontend/css/styles.css, which is the customer-facing site's
+     design system. */
+  body { font-family: system-ui, sans-serif; margin: 2rem; background: #f7f5f2; color: #222; }
+  h1 { margin-bottom: 0.25rem; }
+  .meta { color: #666; margin-bottom: 1rem; font-size: 0.9rem; }
+  .toolbar { margin-bottom: 1rem; display: flex; gap: 0.75rem; align-items: center; }
+  table { width: 100%; border-collapse: collapse; background: #fff; }
+  th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid #e3e0da; vertical-align: top; font-size: 0.9rem; }
+  th { background: #2e2118; color: #fff; }
+  tr:hover { background: #fbf9f6; }
+  .status { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; text-transform: capitalize; }
+  .status-confirmed { background: #fde8c8; color: #7a4b00; }
+  .status-preparing { background: #d7e8fd; color: #0b3f80; }
+  .status-ready { background: #d9f2df; color: #1a6b34; }
+  .status-completed { background: #e2e2e2; color: #444; }
+  .status-cancelled { background: #fbdada; color: #8a1f1f; }
+  select, button { font: inherit; padding: 0.3rem 0.5rem; }
+  button { cursor: pointer; }
+  .empty, .error { padding: 2rem; text-align: center; color: #777; }
+  .error { color: #8a1f1f; }
+</style>
+</head>
+<body>
+  <h1>Staff Order Dashboard</h1>
+  <div class="meta">Confirmed orders from data/orders.json. No login - for local/trusted staff use only.</div>
+  <div class="toolbar">
+    <button id="refreshBtn" type="button">Refresh</button>
+    <span id="refreshedAt"></span>
+  </div>
+  <div id="content">Loading...</div>
+
+  <script>
+    // Keep in sync with $script:OrderStatuses in backend/server.ps1.
+    var STATUSES = ["confirmed", "preparing", "ready", "completed", "cancelled"];
+
+    // Order data (items, customer name/address/notes, etc.) comes from
+    // customers via CafeBot and is untrusted - always escape before
+    // putting it into innerHTML.
+    function escapeHtml(value) {
+      var div = document.createElement("div");
+      div.textContent = value === null || value === undefined ? "" : String(value);
+      return div.innerHTML;
+    }
+
+    function formatItems(items) {
+      if (!items || items.length === 0) return "-";
+      return items.map(function (item) {
+        var opts = (item.selectedOptions || []).map(function (o) { return o.label; }).join(", ");
+        var optsText = opts ? " (" + escapeHtml(opts) + ")" : "";
+        return escapeHtml(item.quantity + "x " + item.name) + optsText;
+      }).join("<br>");
+    }
+
+    function fulfillmentType(order) {
+      if (order.orderType === "pickup") return "Pickup";
+      if (order.orderType === "delivery") return "Delivery";
+      return escapeHtml(order.orderType || "-");
+    }
+
+    function customerInfo(order) {
+      var c = order.customer || {};
+      var lines = [escapeHtml(c.name || "-")];
+      if (order.orderType === "pickup") {
+        if (order.pickupTime) lines.push("Time: " + escapeHtml(order.pickupTime));
+      } else if (order.orderType === "delivery") {
+        if (c.phone) lines.push(escapeHtml(c.phone));
+        var addr = escapeHtml(c.address || "");
+        if (c.apartmentUnit) addr += ", " + escapeHtml(c.apartmentUnit);
+        lines.push(addr);
+        if (c.notes) lines.push("Note: " + escapeHtml(c.notes));
+      }
+      return lines.join("<br>");
+    }
+
+    function statusOptions(current) {
+      return STATUSES.map(function (s) {
+        var selected = s === current ? " selected" : "";
+        return "<option value=\"" + s + "\"" + selected + ">" + s + "</option>";
+      }).join("");
+    }
+
+    function render(orders) {
+      var content = document.getElementById("content");
+      if (!orders || orders.length === 0) {
+        content.innerHTML = "<div class=\"empty\">No confirmed orders yet.</div>";
+        return;
+      }
+
+      var rows = orders.map(function (order) {
+        var shortId = escapeHtml((order.orderId || "").slice(0, 8));
+        return "<tr>" +
+          "<td title=\"" + escapeHtml(order.orderId) + "\">" + shortId + "</td>" +
+          "<td>" + formatItems(order.items) + "</td>" +
+          "<td>" + fulfillmentType(order) + "</td>" +
+          "<td>" + customerInfo(order) + "</td>" +
+          "<td>SAR " + Number(order.total || 0).toFixed(2) + "</td>" +
+          "<td><span class=\"status status-" + escapeHtml(order.status) + "\">" + escapeHtml(order.status) + "</span></td>" +
+          "<td><select data-order-id=\"" + escapeHtml(order.orderId) + "\">" + statusOptions(order.status) + "</select></td>" +
+          "</tr>";
+      }).join("");
+
+      content.innerHTML = "<table><thead><tr>" +
+        "<th>Order ID</th><th>Items</th><th>Fulfillment</th><th>Customer</th><th>Total</th><th>Status</th><th>Update status</th>" +
+        "</tr></thead><tbody>" + rows + "</tbody></table>";
+
+      var selects = content.querySelectorAll("select[data-order-id]");
+      for (var i = 0; i < selects.length; i++) {
+        selects[i].addEventListener("change", function (e) {
+          updateStatus(e.target.getAttribute("data-order-id"), e.target.value);
+        });
+      }
+    }
+
+    function loadOrders() {
+      var content = document.getElementById("content");
+      content.textContent = "Loading...";
+      fetch("/api/orders")
+        .then(function (res) {
+          if (!res.ok) throw new Error("Failed to load orders (" + res.status + ")");
+          return res.json();
+        })
+        .then(function (orders) {
+          render(orders);
+          document.getElementById("refreshedAt").textContent = "Last updated: " + new Date().toLocaleTimeString();
+        })
+        .catch(function (err) {
+          content.innerHTML = "<div class=\"error\">" + escapeHtml(err.message) + "</div>";
+        });
+    }
+
+    function updateStatus(orderId, status) {
+      fetch("/api/orders/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: orderId, status: status })
+      })
+        .then(function (res) {
+          return res.json().then(function (body) { return { ok: res.ok, body: body }; });
+        })
+        .then(function (result) {
+          if (!result.ok || !result.body.ok) {
+            alert("Could not update status: " + (result.body.error || "unknown error"));
+          }
+          loadOrders();
+        })
+        .catch(function () {
+          alert("Could not update status - request failed.");
+          loadOrders();
+        });
+    }
+
+    document.getElementById("refreshBtn").addEventListener("click", loadOrders);
+    loadOrders();
+  </script>
+</body>
+</html>

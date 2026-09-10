@@ -1,15 +1,12 @@
 # prompts/
 
-Put your system prompts and reusable prompt templates here as plain
-`.md` or `.txt` files, for example:
+- `system-prompt.md` — CafeBot's real, active system instructions:
+  menu grounding, recommendations, adding/changing/removing order
+  items, promotions, pickup/delivery, delivery-address confirmation,
+  the pre-checkout summary, and the explicit order-confirmation gate.
+  Loaded verbatim by `Build-SystemMessage` in `backend/server.ps1` on
+  every request, alongside the live menu/order/promotions data - see
+  the file's own header comment for what's still draft vs. decided.
 
-- `system_prompt.md` — the main instructions that define how the
-  assistant should behave (tone, what it can/can't do, how it should
-  take a pizza order, etc.)
-- `order_confirmation.md` — a template for confirming an order back to
-  the customer.
-
-Keeping prompts in their own files (instead of buried in code) makes
-them easy to edit and test without touching the backend logic.
-
-No prompts have been written yet — this is just the folder to hold them.
+Keeping this in its own file (instead of buried in `server.ps1`) makes
+it easy to read and edit without touching backend logic.

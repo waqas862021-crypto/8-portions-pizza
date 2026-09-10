@@ -30,6 +30,15 @@
 # still missing, so the model asks only for what it doesn't already
 # have and never guesses the rest.
 #
+# Delivery address confirmation: order.customer.addressConfirmed tracks
+# whether the customer has explicitly confirmed the address is correct
+# (see confirm_delivery_address / Confirm-DeliveryAddress). Any address
+# change via set_delivery_order resets it to false, so a correction
+# always requires re-confirmation. The model is told (system prompt) to
+# read the address back and get explicit confirmation before checkout -
+# this flag is what makes that state durable instead of just trusted
+# conversationally.
+#
 # Promotions: the backend computes which data/promotions.json entries
 # are both active and currently eligible (category/minOrderValue/day/
 # time rules actually satisfied against the live order) and gives the
@@ -38,14 +47,43 @@
 # isn't real, active, or eligible. apply_promotion re-checks eligibility
 # itself before touching the order.
 #
-# Checkout is not implemented yet - see prompts/system-prompt.md.
+# Pricing: order.subtotal/tax/deliveryFee/total are always recomputed by
+# Update-OrderTotal from menu prices, quantities, the applied promotion
+# and this flat TAX_RATE/DELIVERY_FEE config - plain arithmetic in
+# PowerShell. The model is never asked to calculate or state a price
+# itself; it only relays whatever the backend already computed (via the
+# order state / concise order summary in the system message).
+#
+# Once the customer explicitly confirms (see Confirm-Order below), the
+# order is saved to data/orders.json as a durable record with a unique
+# orderId, a confirmedAt timestamp and status "confirmed" - the only
+# persistence in this backend; everything else lives only in
+# $script:Sessions for the life of the process. A draft can never be
+# saved: Save-ConfirmedOrder is only ever called from inside Confirm-
+# Order, after it has already verified the order is genuinely complete.
+#
+# Payment / fulfillment handoff beyond that save is not implemented yet
+# - see prompts/system-prompt.md.
+#
+# A minimal staff dashboard (GET /dashboard, served from
+# backend/dashboard.html) lists saved orders (GET /api/orders) and lets
+# staff change an order's status (POST /api/orders/status). It has no
+# authentication - same zero-install, local/trusted-use assumption as
+# the rest of this backend, not meant to be exposed beyond that.
 param([int]$Port = 8792)
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $systemPromptPath = Join-Path $root "prompts\system-prompt.md"
 $menuPath = Join-Path $root "data\menu.json"
 $promotionsPath = Join-Path $root "data\promotions.json"
+$ordersPath = Join-Path $root "data\orders.json"
+$dashboardPath = Join-Path $PSScriptRoot "dashboard.html"
 $envPath = Join-Path $root ".env"
+
+# The states staff can move a saved order through. Deliberately flat -
+# no enforced transition order (e.g. nothing stops moving straight from
+# "confirmed" to "completed") to keep this minimal.
+$script:OrderStatuses = @("confirmed", "preparing", "ready", "completed", "cancelled")
 
 $script:Sessions = @{}
 
@@ -53,12 +91,17 @@ function New-OrderState {
   return [ordered]@{
     items = @()
     orderType = $null
-    customer = [ordered]@{ name = $null; phone = $null; address = $null; apartmentUnit = $null; notes = $null }
+    customer = [ordered]@{ name = $null; phone = $null; address = $null; apartmentUnit = $null; notes = $null; addressConfirmed = $false }
     pickupTime = $null
     promotion = $null
+    subtotal = 0
+    tax = 0
+    deliveryFee = 0
     total = 0
     confirmation = $false
     status = "draft"
+    orderId = $null
+    confirmedAt = $null
   }
 }
 
@@ -86,6 +129,17 @@ function Load-DotEnv([string]$path) {
 }
 
 Load-DotEnv $envPath
+
+# Simple flat pricing config, not per-item menu data: TAX_RATE is a
+# percentage applied to the discounted items subtotal (e.g. 15 means
+# 15%); DELIVERY_FEE is a flat SAR amount charged only on delivery
+# orders. Both default to 0 (TryParse leaves them at 0 if the .env
+# variable is missing or not a number), so pricing still works with no
+# .env at all.
+$script:TaxRatePercent = 0.0
+[void][double]::TryParse("$env:TAX_RATE", [ref]$script:TaxRatePercent)
+$script:DeliveryFeeAmount = 0.0
+[void][double]::TryParse("$env:DELIVERY_FEE", [ref]$script:DeliveryFeeAmount)
 
 function Get-Menu {
   return Get-Content $menuPath -Raw | ConvertFrom-Json
@@ -131,7 +185,7 @@ function Test-PromotionEligibility($promo, $order, $menu, [datetime]$now) {
   }
 
   $minOrderValue = if ($null -ne $promo.eligibility.minOrderValue) { [double]$promo.eligibility.minOrderValue } else { 0 }
-  if ([double]$order.total -lt $minOrderValue) {
+  if ([double]$order.subtotal -lt $minOrderValue) {
     return @{ eligible = $false; reason = "order total is below the required minimum ($minOrderValue)" }
   }
 
@@ -192,7 +246,7 @@ function Get-PromotionDiscountAmount($promo, $order, $matchedItems) {
   } elseif ($promo.eligibility.requiresCategories -and $promo.eligibility.appliesToCategory) {
     $base = [double]$matchedItems[0].lineTotal
   } else {
-    $base = [double]$order.total
+    $base = [double]$order.subtotal
   }
 
   if ($promo.discount.type -eq "percentage") {
@@ -244,8 +298,68 @@ function Format-OrderSummary($order, [string]$currency) {
     $lineTotalText = "{0:0.00}" -f [double]$lineItem.lineTotal
     "- $($lineItem.quantity)x $($lineItem.name)$optionText - $currency $lineTotalText"
   }
-  $totalText = "{0:0.00}" -f [double]$order.total
-  return ($lines -join "`n") + "`nTotal: $currency $totalText"
+
+  $totalLines = @("Subtotal: $currency " + ("{0:0.00}" -f [double]$order.subtotal))
+  if ($order.promotion) {
+    $totalLines += "Discount ($($order.promotion.name)): -$currency " + ("{0:0.00}" -f [double]$order.promotion.discountAmount)
+  }
+  if ([double]$order.tax -gt 0) {
+    $totalLines += "Tax: $currency " + ("{0:0.00}" -f [double]$order.tax)
+  }
+  if ([double]$order.deliveryFee -gt 0) {
+    $totalLines += "Delivery fee: $currency " + ("{0:0.00}" -f [double]$order.deliveryFee)
+  }
+  $totalLines += "Total: $currency " + ("{0:0.00}" -f [double]$order.total)
+
+  return ($lines -join "`n") + "`n" + ($totalLines -join "`n")
+}
+
+# Complete, structured summary for the customer to review right before
+# checkout (or whenever they want everything at once): items with
+# quantities/customizations and the price breakdown (reuses
+# Format-OrderSummary), fulfillment details for whichever order type is
+# selected, and promotions (the applied one, or the currently valid ones
+# if none is applied yet). Built entirely from already-computed
+# order/menu data - nothing here is left for the model to assemble or
+# calculate itself.
+function Format-CheckoutSummary($order, [array]$eligiblePromotions, [string]$currency) {
+  $itemsSection = Format-OrderSummary $order $currency
+
+  $fulfillmentLines = @()
+  if ($order.orderType -eq "pickup") {
+    $fulfillmentLines += "Type: Pickup"
+    $fulfillmentLines += "Name: $($order.customer.name)"
+    $fulfillmentLines += "Pickup time: $(if ($order.pickupTime) { $order.pickupTime } else { 'not specified' })"
+  } elseif ($order.orderType -eq "delivery") {
+    $fulfillmentLines += "Type: Delivery"
+    $fulfillmentLines += "Name: $($order.customer.name)"
+    $fulfillmentLines += "Phone: $($order.customer.phone)"
+    $addressLine = "Address: $($order.customer.address)"
+    if ($order.customer.apartmentUnit) { $addressLine += ", $($order.customer.apartmentUnit)" }
+    $fulfillmentLines += $addressLine
+    if ($order.customer.notes) { $fulfillmentLines += "Delivery instructions: $($order.customer.notes)" }
+    $fulfillmentLines += "Address confirmed: $(if ($order.customer.addressConfirmed) { 'Yes' } else { 'No - must be confirmed before checkout' })"
+  } else {
+    $fulfillmentLines += "Not selected yet - ask whether this is pickup or delivery."
+  }
+
+  $promotionLines = @()
+  if ($order.promotion) {
+    $promotionLines += "Applied: $($order.promotion.name) (-$currency $("{0:0.00}" -f [double]$order.promotion.discountAmount))"
+  } elseif ($eligiblePromotions -and $eligiblePromotions.Count -gt 0) {
+    $promotionLines += "None applied. Currently valid:"
+    $promotionLines += Format-PromotionsSummary $eligiblePromotions $currency
+  } else {
+    $promotionLines += "None applied or currently valid."
+  }
+
+  $confirmationLine = if ($order.confirmation) {
+    "Already confirmed by the customer."
+  } else {
+    "Not yet confirmed - present this summary and get an explicit, unambiguous yes from the customer before calling confirm_order. A vague or hedging reply does not count."
+  }
+
+  return "Items:`n$itemsSection`n`nFulfillment:`n" + ($fulfillmentLines -join "`n") + "`n`nPromotions:`n" + ($promotionLines -join "`n") + "`n`nConfirmation:`n$confirmationLine"
 }
 
 function Build-SystemMessage([hashtable]$order, [array]$eligiblePromotions) {
@@ -255,11 +369,13 @@ function Build-SystemMessage([hashtable]$order, [array]$eligiblePromotions) {
   $orderJson = $order | ConvertTo-Json -Depth 10
   $orderSummary = Format-OrderSummary $order $menu.currency
   $promotionsSummary = Format-PromotionsSummary $eligiblePromotions $menu.currency
+  $checkoutSummary = Format-CheckoutSummary $order $eligiblePromotions $menu.currency
   $menuHeading = "Current menu data (data/menu.json, authoritative - do not invent items or prices beyond this):"
-  $orderHeading = "Current order state for this session (you may only change it by calling add_item_to_order, modify_order_item, remove_order_item, apply_promotion, set_pickup_order or set_delivery_order - each item's lineItemId is how you refer to it; check customer.name/phone/address/apartmentUnit/notes and pickupTime here before asking the customer for them - never re-ask for something already set, and never guess a value that isn't):"
+  $orderHeading = "Current order state for this session (you may only change it by calling add_item_to_order, modify_order_item, remove_order_item, apply_promotion, set_pickup_order, set_delivery_order, confirm_delivery_address or confirm_order - each item's lineItemId is how you refer to it; check customer.name/phone/address/apartmentUnit/notes and pickupTime here before asking the customer for them - never re-ask for something already set, and never guess a value that isn't; for delivery, check customer.addressConfirmed - if false, the address still needs to be read back and confirmed before checkout; check confirmation - if false, the order is not yet confirmed and must never be treated as final, even if it was confirmed earlier and has since changed):"
   $summaryHeading = "Concise order summary (use this, as-is or lightly reworded, whenever the customer asks what's in their order - don't recompute it from the raw JSON above):"
   $promotionsHeading = "Currently eligible active promotions (this list is already filtered to what's active AND eligible right now - you may only mention or apply a promotion from this exact list, by its id, via apply_promotion; never mention or apply any promotion not listed here, and never invent a discount):"
-  return $systemPrompt + "`n`n" + $menuHeading + "`n" + $menuJson + "`n`n" + $orderHeading + "`n" + $orderJson + "`n`n" + $summaryHeading + "`n" + $orderSummary + "`n`n" + $promotionsHeading + "`n" + $promotionsSummary
+  $checkoutHeading = "Complete checkout summary (structured - items with quantities/customizations, fulfillment details, promotions and the full price breakdown; present this, as-is or lightly reworded, right before the customer checks out or whenever they want to review everything at once - don't assemble your own version):"
+  return $systemPrompt + "`n`n" + $menuHeading + "`n" + $menuJson + "`n`n" + $orderHeading + "`n" + $orderJson + "`n`n" + $summaryHeading + "`n" + $orderSummary + "`n`n" + $promotionsHeading + "`n" + $promotionsSummary + "`n`n" + $checkoutHeading + "`n" + $checkoutSummary
 }
 
 function Get-ToolDefinitions {
@@ -357,6 +473,30 @@ function Get-ToolDefinitions {
           required = @()
         }
       }
+    },
+    @{
+      type = "function"
+      function = @{
+        name = "confirm_delivery_address"
+        description = "Mark the current delivery address as explicitly confirmed by the customer. Only call this AFTER you have read the full address back to them (street, apartment/unit if any) and they have explicitly said it's correct - never call it just because you set the address, and never call it if they asked for a correction (call set_delivery_order with the corrected address instead, then read it back and confirm again)."
+        parameters = @{
+          type = "object"
+          properties = @{}
+          required = @()
+        }
+      }
+    },
+    @{
+      type = "function"
+      function = @{
+        name = "confirm_order"
+        description = "Mark the order as confirmed by the customer - the gate that must happen before anything is ever treated as saved or final. Only call this AFTER presenting the complete checkout summary and receiving an explicit, unambiguous confirmation (e.g. 'yes, that's correct', 'confirm it', 'place the order'). A vague, hedging, or non-committal reply ('ok', 'sure', 'I guess', a question, or a reply that also asks for a change) does NOT count as confirmation - never call this on one of those; ask a direct yes/no question instead. Never call this preemptively or assume agreement."
+        parameters = @{
+          type = "object"
+          properties = @{}
+          required = @()
+        }
+      }
     }
   )
 }
@@ -414,13 +554,37 @@ function Add-ItemToOrder($order, $menu, [string]$menuItemId, $quantity, $selecte
   return @{ ok = $true; added = $lineItem }
 }
 
+# Recomputes the full price breakdown from scratch every time: items
+# total (menu unitPrice x quantity, already summed per line), minus any
+# applied promotion discount, floored at 0, then flat tax and (delivery
+# orders only) the flat delivery fee on top. Plain deterministic
+# arithmetic - this is the only place order.total is ever set, so the
+# model never calculates or states a total the backend didn't compute.
+#
+# Every order-mutating function calls this after making its change, so
+# it also doubles as the one place that un-confirms a previously
+# confirmed order: once anything changes, a prior confirm_order call no
+# longer reflects what the customer actually agreed to, so it must be
+# asked for again against the updated summary.
 function Update-OrderTotal($order) {
   $itemsTotal = if ($order.items.Count -gt 0) { (($order.items | ForEach-Object { [double]$_.lineTotal }) | Measure-Object -Sum).Sum } else { 0 }
   $discount = if ($order.promotion) { [double]$order.promotion.discountAmount } else { 0 }
   # [math]::Max(0, ...) would resolve to the Int32 overload here (0 is an
   # int literal) and silently truncate the result to a whole number -
   # 0.0 forces the Double overload instead.
-  $order.total = [math]::Round([math]::Max(0.0, $itemsTotal - $discount), 2)
+  $subtotal = [math]::Round([math]::Max(0.0, $itemsTotal - $discount), 2)
+  $tax = [math]::Round($subtotal * ($script:TaxRatePercent / 100.0), 2)
+  $deliveryFee = if ($order.orderType -eq "delivery") { $script:DeliveryFeeAmount } else { 0.0 }
+
+  $order.subtotal = $subtotal
+  $order.tax = $tax
+  $order.deliveryFee = $deliveryFee
+  $order.total = [math]::Round($subtotal + $tax + $deliveryFee, 2)
+
+  if ($order.confirmation) {
+    $order.confirmation = $false
+    $order.status = "draft"
+  }
 }
 
 # Changes quantity and/or the selected options of an existing line item,
@@ -569,7 +733,9 @@ function Set-PickupOrder($order, $customerName, $pickupTime) {
     $order.pickupTime = "$pickupTime".Trim()
   }
 
-  return @{ ok = $true; orderType = $order.orderType; customerName = $order.customer.name; pickupTime = $order.pickupTime }
+  Update-OrderTotal $order
+
+  return @{ ok = $true; orderType = $order.orderType; customerName = $order.customer.name; pickupTime = $order.pickupTime; total = $order.total }
 }
 
 # Selects delivery as the order type once name, phone and address are
@@ -587,10 +753,22 @@ function Set-DeliveryOrder($order, $customerName, $phone, $address, $apartmentUn
     $order.customer.phone = "$phone".Trim()
   }
   if (-not [string]::IsNullOrWhiteSpace("$address")) {
-    $order.customer.address = "$address".Trim()
+    $newAddress = "$address".Trim()
+    if ($newAddress -ne "$($order.customer.address)") {
+      $order.customer.addressConfirmed = $false
+    }
+    $order.customer.address = $newAddress
   }
   if (-not [string]::IsNullOrWhiteSpace("$apartmentUnit")) {
-    $order.customer.apartmentUnit = "$apartmentUnit".Trim()
+    # apartment/unit is read back and confirmed as part of "the address"
+    # (see the system prompt's address-confirmation section), so
+    # changing it must invalidate a prior confirmation too, not just a
+    # change to the street address.
+    $newApartmentUnit = "$apartmentUnit".Trim()
+    if ($newApartmentUnit -ne "$($order.customer.apartmentUnit)") {
+      $order.customer.addressConfirmed = $false
+    }
+    $order.customer.apartmentUnit = $newApartmentUnit
   }
   if (-not [string]::IsNullOrWhiteSpace("$instructions")) {
     $order.customer.notes = "$instructions".Trim()
@@ -607,6 +785,8 @@ function Set-DeliveryOrder($order, $customerName, $phone, $address, $apartmentUn
 
   $order.orderType = "delivery"
 
+  Update-OrderTotal $order
+
   return @{
     ok = $true
     orderType = $order.orderType
@@ -615,7 +795,165 @@ function Set-DeliveryOrder($order, $customerName, $phone, $address, $apartmentUn
     address = $order.customer.address
     apartmentUnit = $order.customer.apartmentUnit
     instructions = $order.customer.notes
+    addressConfirmed = $order.customer.addressConfirmed
+    total = $order.total
   }
+}
+
+# Marks the current delivery address as explicitly confirmed by the
+# customer - only valid once the order is actually a delivery order with
+# an address on file. The model must have read the address back to the
+# customer and gotten an explicit yes before calling this (enforced by
+# the system prompt); this just makes that state durable. Any later
+# change to the address via Set-DeliveryOrder resets this back to false.
+function Confirm-DeliveryAddress($order) {
+  if ($order.orderType -ne "delivery") {
+    return @{ ok = $false; error = "This order isn't a delivery order, so there's no address to confirm." }
+  }
+  if ([string]::IsNullOrWhiteSpace("$($order.customer.address)")) {
+    return @{ ok = $false; error = "No delivery address is on file yet - get one before confirming it." }
+  }
+
+  $order.customer.addressConfirmed = $true
+
+  return @{ ok = $true; address = $order.customer.address; addressConfirmed = $true }
+}
+
+# The confirmation gate: marks order.confirmation true and order.status
+# "confirmed", then saves the order to data/orders.json via
+# Save-ConfirmedOrder - the only state this backend would ever treat as
+# save/finalize-ready. Only valid once there's actually something
+# complete to confirm: at least one item, a selected order type, the
+# required customer details for it, and - for delivery - an address
+# that's already been explicitly confirmed via confirm_delivery_address.
+# This function only enforces those structural preconditions; judging
+# whether the customer's reply was an unambiguous "yes" (as opposed to a
+# vague or hedging one) is a language judgment the model has to make
+# before ever calling this tool - see the system prompt. Update-
+# OrderTotal resets confirmation back to false on any later change to
+# the order, so a stale confirmation can never survive an edit and a
+# draft can never reach Save-ConfirmedOrder.
+function Confirm-Order($order, [string]$sessionId) {
+  if ($order.confirmation) {
+    # Already confirmed (and saved) earlier in this session with no
+    # changes since - report the existing confirmation instead of
+    # generating a second orderId/record for the same order.
+    return @{ ok = $true; alreadyConfirmed = $true; confirmation = $true; status = $order.status; orderId = $order.orderId; total = $order.total }
+  }
+
+  if (-not $order.items -or $order.items.Count -eq 0) {
+    return @{ ok = $false; error = "The order is empty - there's nothing to confirm yet." }
+  }
+
+  if ($order.orderType -eq "pickup") {
+    if ([string]::IsNullOrWhiteSpace("$($order.customer.name)")) {
+      return @{ ok = $false; error = "Pickup order is missing the customer's name - get it before confirming." }
+    }
+  } elseif ($order.orderType -eq "delivery") {
+    $missing = @()
+    if ([string]::IsNullOrWhiteSpace("$($order.customer.name)")) { $missing += "name" }
+    if ([string]::IsNullOrWhiteSpace("$($order.customer.phone)")) { $missing += "phone" }
+    if ([string]::IsNullOrWhiteSpace("$($order.customer.address)")) { $missing += "address" }
+    if ($missing.Count -gt 0) {
+      return @{ ok = $false; error = "Delivery order is missing required details: $($missing -join ', ') - get them before confirming."; missing = $missing }
+    }
+    if (-not $order.customer.addressConfirmed) {
+      return @{ ok = $false; error = "The delivery address hasn't been confirmed yet - confirm it (confirm_delivery_address) before confirming the order." }
+    }
+  } else {
+    return @{ ok = $false; error = "No fulfillment method has been selected yet - set pickup or delivery before confirming." }
+  }
+
+  $order.confirmation = $true
+  $order.status = "confirmed"
+  $order.orderId = [guid]::NewGuid().ToString()
+  $order.confirmedAt = (Get-Date).ToUniversalTime().ToString("o")
+
+  Save-ConfirmedOrder $order $sessionId
+
+  return @{ ok = $true; confirmation = $true; status = $order.status; orderId = $order.orderId; total = $order.total }
+}
+
+# Appends one confirmed order to data/orders.json as a durable record -
+# only ever called from Confirm-Order, after it has already verified the
+# order is complete and set status to "confirmed", so a draft can never
+# be saved here. Reads the existing array (starting fresh if the file is
+# missing or empty), appends the new record, and writes the whole array
+# back. -InputObject (not the pipeline) is required for ConvertTo-Json
+# to keep wrapping the result in [ ] even when there's only one order.
+function Save-ConfirmedOrder($order, [string]$sessionId) {
+  $existingOrders = @()
+  if (Test-Path $ordersPath) {
+    $raw = Get-Content $ordersPath -Raw
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+      # Assign to a variable before wrapping with @() - @() around the
+      # ConvertFrom-Json pipeline directly double-wraps an empty JSON
+      # array ("[]" -> a 1-element array whose element is itself an
+      # empty array), because the pipeline emits that empty array as one
+      # object. Wrapping an already-assigned array variable with @()
+      # doesn't have that problem - it passes an existing array through
+      # unchanged.
+      $parsedOrders = $raw | ConvertFrom-Json
+      $existingOrders = @($parsedOrders)
+    }
+  }
+
+  $record = [ordered]@{
+    orderId = $order.orderId
+    sessionId = $sessionId
+    status = $order.status
+    confirmedAt = $order.confirmedAt
+    items = $order.items
+    orderType = $order.orderType
+    customer = $order.customer
+    pickupTime = $order.pickupTime
+    promotion = $order.promotion
+    subtotal = $order.subtotal
+    tax = $order.tax
+    deliveryFee = $order.deliveryFee
+    total = $order.total
+  }
+
+  $existingOrders = @($existingOrders) + $record
+  ConvertTo-Json -InputObject $existingOrders -Depth 10 | Set-Content -Path $ordersPath -Encoding UTF8
+}
+
+# Reads every saved order back out of data/orders.json for the staff
+# dashboard - same empty/missing-file handling and the same
+# assign-before-wrap fix as Save-ConfirmedOrder (see the comment there),
+# so an empty file correctly comes back as an empty array, not a
+# 1-element array containing an empty array.
+function Get-SavedOrders {
+  if (-not (Test-Path $ordersPath)) { return @() }
+  $raw = Get-Content $ordersPath -Raw
+  if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
+  $parsedOrders = $raw | ConvertFrom-Json
+  return @($parsedOrders)
+}
+
+# Changes one saved order's status (the only thing the staff dashboard
+# can edit) - validates the orderId exists and the status is one of
+# $script:OrderStatuses, then rewrites the whole file. PSCustomObjects
+# from ConvertFrom-Json are reference types, so updating the matched
+# order's .status property updates it in place within $orders.
+function Update-SavedOrderStatus([string]$orderId, [string]$status) {
+  if ([string]::IsNullOrWhiteSpace($orderId)) {
+    return @{ ok = $false; error = "Missing orderId." }
+  }
+  if ($script:OrderStatuses -notcontains $status) {
+    return @{ ok = $false; error = "Invalid status '$status'. Must be one of: $($script:OrderStatuses -join ', ')." }
+  }
+
+  $orders = Get-SavedOrders
+  $target = $orders | Where-Object { $_.orderId -eq $orderId } | Select-Object -First 1
+  if (-not $target) {
+    return @{ ok = $false; error = "No saved order with id '$orderId'." }
+  }
+
+  $target.status = $status
+  ConvertTo-Json -InputObject $orders -Depth 10 | Set-Content -Path $ordersPath -Encoding UTF8
+
+  return @{ ok = $true; orderId = $orderId; status = $status }
 }
 
 function Invoke-AiChatCompletion([array]$messages, [array]$tools) {
@@ -641,6 +979,7 @@ $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
 Write-Host "CafeBot chat backend listening on http://localhost:$Port/api/chat"
+Write-Host "Staff dashboard at http://localhost:$Port/dashboard"
 
 while ($listener.IsListening) {
   $context = $listener.GetContext()
@@ -649,9 +988,32 @@ while ($listener.IsListening) {
   $res.ContentType = "application/json"
 
   try {
-    if ($req.HttpMethod -ne "POST" -or $req.Url.AbsolutePath -ne "/api/chat") {
+    if ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/dashboard") {
+      $res.ContentType = "text/html"
+      $html = Get-Content $dashboardPath -Raw
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($html)
+      $res.OutputStream.Write($bytes, 0, $bytes.Length)
+    } elseif ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/api/orders") {
+      # @() wraps the call itself (not a variable assigned from it) -
+      # otherwise a zero-order result collapses to nothing at all
+      # (PowerShell functions returning an empty array emit zero
+      # pipeline objects), and ConvertTo-Json on that produces an empty
+      # response body instead of "[]".
+      $json = ConvertTo-Json -InputObject @(Get-SavedOrders) -Depth 10
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+      $res.OutputStream.Write($bytes, 0, $bytes.Length)
+    } elseif ($req.HttpMethod -eq "POST" -and $req.Url.AbsolutePath -eq "/api/orders/status") {
+      $reader = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
+      $bodyText = $reader.ReadToEnd()
+      $payload = $bodyText | ConvertFrom-Json
+      $result = Update-SavedOrderStatus "$($payload.orderId)" "$($payload.status)"
+      if (-not $result.ok) { $res.StatusCode = 400 }
+      $json = $result | ConvertTo-Json -Depth 10
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+      $res.OutputStream.Write($bytes, 0, $bytes.Length)
+    } elseif ($req.HttpMethod -ne "POST" -or $req.Url.AbsolutePath -ne "/api/chat") {
       $res.StatusCode = 404
-      $bytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"Not found. POST /api/chat only."}')
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"Not found. POST /api/chat, GET /dashboard, GET /api/orders, POST /api/orders/status."}')
       $res.OutputStream.Write($bytes, 0, $bytes.Length)
     } else {
       $reader = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
@@ -690,7 +1052,16 @@ while ($listener.IsListening) {
           if ($toolCall.function.name -eq "add_item_to_order") {
             $result = Add-ItemToOrder $session.Order $menu $args.menuItemId $args.quantity @($args.selectedOptionIds)
           } elseif ($toolCall.function.name -eq "modify_order_item") {
-            $optionIds = if ($null -ne $args.selectedOptionIds) { @($args.selectedOptionIds) } else { $null }
+            # A plain if statement, not "$x = if (...) {...} else {...}" -
+            # assigning the result of an if/else expression collapses an
+            # explicitly-empty array (selectedOptionIds: []) to $null,
+            # making it indistinguishable from the field being omitted
+            # entirely (same PowerShell empty-array-collapse gotcha as
+            # elsewhere in this file - see Save-ConfirmedOrder).
+            $optionIds = $null
+            if ($null -ne $args.selectedOptionIds) {
+              $optionIds = @($args.selectedOptionIds)
+            }
             $result = Update-OrderItem $session.Order $menu $args.lineItemId $args.quantity $optionIds
           } elseif ($toolCall.function.name -eq "remove_order_item") {
             $result = Remove-OrderItem $session.Order $args.lineItemId $args.quantity
@@ -700,6 +1071,10 @@ while ($listener.IsListening) {
             $result = Set-PickupOrder $session.Order $args.customerName $args.pickupTime
           } elseif ($toolCall.function.name -eq "set_delivery_order") {
             $result = Set-DeliveryOrder $session.Order $args.customerName $args.phone $args.address $args.apartmentUnit $args.instructions
+          } elseif ($toolCall.function.name -eq "confirm_delivery_address") {
+            $result = Confirm-DeliveryAddress $session.Order
+          } elseif ($toolCall.function.name -eq "confirm_order") {
+            $result = Confirm-Order $session.Order $session.SessionId
           } else {
             $result = @{ ok = $false; error = "Unknown tool: $($toolCall.function.name)" }
           }
